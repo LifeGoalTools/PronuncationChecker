@@ -3,41 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>English Practice - Fast Response</title>
+    <title>AI Speech Coach</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 40px; background-color: #f0f2f5; }
-        .container { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); width: 100%; max-width: 600px; text-align: center; }
-        .step-indicator { color: #888; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-        .target-sentence { font-size: 28px; color: #2c3e50; margin-bottom: 30px; min-height: 80px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
-        .status-pill { display: inline-block; padding: 10px 25px; border-radius: 50px; font-size: 14px; margin-bottom: 20px; background: #eee; transition: all 0.2s; border: 2px solid transparent; }
-        .listening { background: #ffeaea; color: #ff4757; border-color: #ff4757; font-weight: bold; }
-        .processing { background: #e3f2fd; color: #2196f3; }
-        .controls { margin-top: 20px; }
-        .hint { font-size: 13px; color: #999; margin-top: 20px; padding: 10px; border-top: 1px solid #eee; }
-        .score-box { margin-top: 20px; padding: 20px; border-radius: 15px; display: none; background: #f8f9fa; border: 1px solid #e9ecef; }
-        .big-score { font-size: 52px; font-weight: bold; color: #2ed573; margin-bottom: 10px; }
-        button { background: #2f3542; color: white; border: none; padding: 15px 40px; border-radius: 12px; cursor: pointer; font-size: 18px; font-weight: 600; transition: transform 0.1s; }
-        button:hover { background: #1e222b; }
-        button:active { transform: scale(0.95); }
-        kbd { background: #eee; border-radius: 3px; border: 1px solid #ccc; padding: 1px 6px; font-family: sans-serif; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; justify-content: center; padding: 40px; background-color: #f8f9fa; }
+        .container { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.08); width: 100%; max-width: 650px; text-align: center; }
+        .step-label { color: #adb5bd; font-weight: 700; text-transform: uppercase; font-size: 12px; letter-spacing: 1.5px; margin-bottom: 10px; }
+        
+        /* Sentence Display & Real-time Highlight */
+        .sentence-display { font-size: 36px; line-height: 1.4; margin: 20px 0 40px; font-weight: 700; color: #dee2e6; }
+        .word { transition: all 0.3s ease; display: inline-block; margin: 0 6px; position: relative; }
+        .highlight { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.2); transform: scale(1.1); }
+        
+        /* Buttons & Status */
+        .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 30px; }
+        button { border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+        
+        .btn-listen { background: #e7f5ff; color: #228be6; }
+        .btn-listen:hover { background: #d0ebff; }
+        .btn-next { background: #212529; color: white; display: none; }
+        
+        .status-pill { display: inline-block; padding: 8px 20px; border-radius: 50px; font-size: 13px; background: #f1f3f5; color: #495057; border: 2px solid transparent; }
+        .listening { background: #fff5f5; color: #fa5252; border-color: #ffc9c9; font-weight: bold; }
+        
+        kbd { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 2px 6px; font-family: monospace; font-size: 12px; }
+        .hint { margin-top: 30px; color: #868e96; font-size: 13px; border-top: 1px solid #f1f3f5; padding-top: 20px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div id="stepLabel" class="step-indicator">Sentence 1 of 3</div>
-    <div id="targetDisplay" class="target-sentence">What day is it?</div>
+    <div id="stepLabel" class="step-label">Sentence 1 of 3</div>
+    <div id="textContainer" class="sentence-display"></div>
     
-    <div id="status" class="status-pill">Press Space to Start</div>
-
-    <div id="results" class="score-box">
-        <div id="scoreDisplay" class="big-score">0%</div>
-        <p>I heard: <i id="heardText" style="color: #555;">...</i></p>
-        <button onclick="nextSentence()" id="nextBtn">Next Sentence</button>
+    <div class="controls">
+        <button class="btn-listen" onclick="playExample()">
+            <span>🔊</span> Listen to Example (L)
+        </button>
+        <button id="nextBtn" class="btn-next" onclick="nextSentence()">
+            Next Sentence →
+        </button>
     </div>
 
+    <div id="status" class="status-pill">Press Space to Start Speaking</div>
+
     <div class="hint">
-        Use <kbd>Space Bar</kbd> to toggle microphone.
+        <kbd>Space</kbd> Start/Stop Recording &nbsp; | &nbsp; <kbd>L</kbd> Hear Example
     </div>
 </div>
 
@@ -45,148 +55,104 @@
     const sentences = ["What day is it?", "What is the date today?", "How's the weather?"];
     let currentStep = 0;
     let isListening = false;
-    let processingTimeout;
+    let spokenWordsCache = new Set();
 
-    const targetDisplay = document.getElementById('targetDisplay');
-    const stepLabel = document.getElementById('stepLabel');
+    const textContainer = document.getElementById('textContainer');
     const statusPill = document.getElementById('status');
-    const resultsBox = document.getElementById('results');
-    const scoreDisplay = document.getElementById('scoreDisplay');
-    const heardText = document.getElementById('heardText');
+    const stepLabel = document.getElementById('stepLabel');
+    const nextBtn = document.getElementById('nextBtn');
 
+    // Speech APIs
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
-    
     recognition.lang = 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    recognition.interimResults = true;
+    recognition.continuous = true;
 
-    // SPACE BAR HANDLER
+    const synth = window.speechSynthesis;
+
+    // --- Initialization ---
+    function loadSentence() {
+        const text = sentences[currentStep];
+        const words = text.split(" ");
+        textContainer.innerHTML = words.map((word, i) => `<span class="word" id="word-${i}">${word}</span>`).join("");
+        stepLabel.textContent = `Sentence ${currentStep + 1} of ${sentences.length}`;
+        nextBtn.style.display = "none";
+        spokenWordsCache.clear();
+    }
+    loadSentence();
+
+    // --- Audio Example (Text-to-Speech) ---
+    function playExample() {
+        if (synth.speaking) synth.cancel();
+        const utterance = new SpeechSynthesisUtterance(sentences[currentStep]);
+        utterance.rate = 0.9; // Slightly slower for clarity
+        utterance.pitch = 1;
+        synth.speak(utterance);
+    }
+
+    // --- Keyboard Shortcuts ---
     window.addEventListener('keydown', (e) => {
         if (e.code === "Space") {
-            e.preventDefault(); 
-            if (!isListening) {
-                startListening();
-            } else {
-                stopListening();
-            }
+            e.preventDefault();
+            toggleListening();
+        }
+        if (e.key.toLowerCase() === "l") {
+            playExample();
         }
     });
 
-    function startListening() {
-        try {
-            resultsBox.style.display = "none";
+    function toggleListening() {
+        if (!isListening) {
             recognition.start();
-        } catch (e) {
-            console.log("Recognition already active.");
+            isListening = true;
+            statusPill.textContent = "🔴 Listening... Speak now";
+            statusPill.classList.add('listening');
+        } else {
+            recognition.stop();
+            isListening = false;
+            statusPill.textContent = "Press Space to Start Speaking";
+            statusPill.classList.remove('listening');
         }
     }
 
-    recognition.onstart = () => {
-        isListening = true;
-        statusPill.textContent = "🔴 Listening... (Press Space to Stop)";
-        statusPill.className = "status-pill listening";
-    };
-
-    function stopListening() {
-        recognition.stop();
-        statusPill.textContent = "⏳ Processing...";
-        statusPill.className = "status-pill processing";
-        
-        // Safety timeout: if server doesn't respond in 4s, reset
-        clearTimeout(processingTimeout);
-        processingTimeout = setTimeout(() => {
-            if (statusPill.textContent === "⏳ Processing...") {
-                statusPill.textContent = "⚠️ Server timed out. Try again.";
-                statusPill.className = "status-pill";
-                isListening = false;
-            }
-        }, 4000);
-    }
-
+    // --- Real-Time Recognition Logic ---
     recognition.onresult = (event) => {
-        clearTimeout(processingTimeout);
-        const transcript = event.results[0][0].transcript;
-        const target = sentences[currentStep];
-        const score = calculateSimilarity(target.toLowerCase(), transcript.toLowerCase());
+        let liveTranscript = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            liveTranscript += event.results[i][0].transcript;
+        }
         
-        showResults(transcript, score);
-    };
+        const spokenInput = liveTranscript.toLowerCase();
+        const targetWords = sentences[currentStep].split(" ");
 
-    recognition.onend = () => {
-        isListening = false;
-        if (statusPill.className.includes("listening")) {
-            statusPill.textContent = "Press Space to Start";
-            statusPill.className = "status-pill";
+        targetWords.forEach((word, index) => {
+            const cleanTarget = word.replace(/[?.!,]/g,"").toLowerCase();
+            if (spokenInput.includes(cleanTarget)) {
+                document.getElementById(`word-${index}`).classList.add('highlight');
+                spokenWordsCache.add(index);
+            }
+        });
+
+        // If all words are highlighted, show the next button
+        if (spokenWordsCache.size === targetWords.length) {
+            nextBtn.style.display = "flex";
+            statusPill.textContent = "✨ Perfect! Move to next.";
+            statusPill.classList.remove('listening');
         }
     };
-
-    recognition.onerror = (event) => {
-        clearTimeout(processingTimeout);
-        statusPill.textContent = "Error: " + event.error;
-        statusPill.className = "status-pill";
-        isListening = false;
-    };
-
-    function showResults(heard, score) {
-        resultsBox.style.display = "block";
-        scoreDisplay.textContent = Math.round(score * 100) + "%";
-        heardText.textContent = `"${heard}"`;
-        statusPill.textContent = "Done! Press Space to try again";
-        statusPill.className = "status-pill";
-        
-        if (score > 0.8) scoreDisplay.style.color = "#2ed573";
-        else if (score > 0.5) scoreDisplay.style.color = "#ffa502";
-        else scoreDisplay.style.color = "#ff4757";
-
-        if(currentStep === sentences.length - 1) {
-            document.getElementById('nextBtn').textContent = "Restart Practice";
-        }
-    }
 
     function nextSentence() {
-        currentStep++;
-        if (currentStep >= sentences.length) {
-            currentStep = 0;
-            document.getElementById('nextBtn').textContent = "Next Sentence";
-        }
-        updateUI();
+        currentStep = (currentStep + 1) % sentences.length;
+        loadSentence();
+        statusPill.textContent = "Press Space to Start Speaking";
     }
 
-    function updateUI() {
-        targetDisplay.textContent = sentences[currentStep];
-        stepLabel.textContent = `Sentence ${currentStep + 1} of ${sentences.length}`;
-        resultsBox.style.display = "none";
-        statusPill.textContent = "Press Space to Start";
-    }
-
-    function calculateSimilarity(s1, s2) {
-        s1 = s1.replace(/[?.!,]/g,"").trim();
-        s2 = s2.replace(/[?.!,]/g,"").trim();
-        let longer = s1.length > s2.length ? s1 : s2;
-        let shorter = s1.length > s2.length ? s2 : s1;
-        if (longer.length === 0) return 1.0;
-        return (longer.length - editDistance(longer, shorter)) / parseFloat(longer.length);
-    }
-
-    function editDistance(s1, s2) {
-        const costs = [];
-        for (let i = 0; i <= s1.length; i++) {
-            let lastValue = i;
-            for (let j = 0; j <= s2.length; j++) {
-                if (i === 0) costs[j] = j;
-                else if (j > 0) {
-                    let newValue = costs[j - 1];
-                    if (s1.charAt(i - 1) !== s2.charAt(j - 1))
-                        newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
-                    costs[j - 1] = lastValue;
-                    lastValue = newValue;
-                }
-            }
-            if (i > 0) costs[s2.length] = lastValue;
-        }
-        return costs[s2.length];
-    }
+    recognition.onerror = (err) => {
+        console.error(err);
+        isListening = false;
+        statusPill.classList.remove('listening');
+    };
 </script>
 
 </body>
