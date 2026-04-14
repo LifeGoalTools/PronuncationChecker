@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Pronunciation Scorer</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; padding: 40px; background-color: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        h1 { color: #333; margin-bottom: 20px; }
+        textarea { width: 100%; height: 80px; padding: 12px; border: 2px solid #ddd; border-radius: 8px; margin-bottom: 20px; font-size: 16px; resize: none; box-sizing: border-box; }
+        button { background-color: #4CAF50; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 50px; cursor: pointer; transition: transform 0.2s, background 0.2s; width: 100%; }
+        button:active { transform: scale(0.98); }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #recording-status { margin-top: 15px; color: #666; font-style: italic; min-height: 24px; }
+        .results { margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee; }
+        .score-circle { width: 100px; height: 100px; border-radius: 50%; border: 8px solid #4CAF50; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px; font-size: 24px; font-weight: bold; color: #333; }
+        .feedback { color: #555; line-height: 1.6; }
+        .transcript { font-weight: bold; color: #2196F3; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>VocalScore AI</h1>
+    <p>Type the sentence you want to practice:</p>
+    <textarea id="targetText" placeholder="Enter a sentence (e.g., 'The quick brown fox jumps over the lazy dog')">The weather is lovely today.</textarea>
+    
+    <button id="startBtn">Start Speaking</button>
+    <div id="recording-status"></div>
+
+    <div id="resultsArea" class="results" style="display: none;">
+        <div class="score-circle" id="scoreDisplay">0%</div>
+        <div class="feedback">
+            <p>I heard: <span id="heardText" class="transcript">...</span></p>
+            <p id="message"></p>
+        </div>
+    </div>
+</div>
+
+<script>
+    const startBtn = document.getElementById('startBtn');
+    const targetText = document.getElementById('targetText');
+    const recordingStatus = document.getElementById('recording-status');
+    const resultsArea = document.getElementById('resultsArea');
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const heardText = document.getElementById('heardText');
+    const message = document.getElementById('message');
+
+    // Check for browser support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+        alert("Your browser does not support Speech Recognition. Please try Chrome or Edge.");
+    } else {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+
+        startBtn.onclick = () => {
+            recognition.start();
+            startBtn.disabled = true;
+            startBtn.textContent = "Listening...";
+            recordingStatus.textContent = "Speak now...";
+            resultsArea.style.display = "none";
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            const original = targetText.value;
+            
+            processResult(original, transcript);
+        };
+
+        recognition.onspeechend = () => {
+            recognition.stop();
+            startBtn.disabled = false;
+            startBtn.textContent = "Start Speaking";
+            recordingStatus.textContent = "";
+        };
+
+        recognition.onerror = (event) => {
+            recordingStatus.textContent = "Error occurred: " + event.error;
+            startBtn.disabled = false;
+            startBtn.textContent = "Start Speaking";
+        };
+    }
+
+    function processResult(original, heard) {
+        const score = calculateSimilarity(original.toLowerCase(), heard.toLowerCase());
+        
+        resultsArea.style.display = "block";
+        scoreDisplay.textContent = Math.round(score * 100) + "%";
+        heardText.textContent = `"${heard}"`;
+
+        if (score > 0.9) {
+            message.textContent = "Excellent! Perfect pronunciation.";
+            scoreDisplay.style.borderColor = "#4CAF50";
+        } else if (score > 0.7) {
+            message.textContent = "Good job! A few minor slips.";
+            scoreDisplay.style.borderColor = "#FFC107";
+        } else {
+            message.textContent = "Keep practicing! Try to enunciate more clearly.";
+            scoreDisplay.style.borderColor = "#f44336";
+        }
+    }
+
+    // Basic Levenshtein Similarity calculation
+    function calculateSimilarity(s1, s2) {
+        // Remove punctuation for fairer scoring
+        s1 = s1.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+        s2 = s2.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+        
+        let longer = s1;
+        let shorter = s2;
+        if (s1.length < s2.length) {
+            longer = s2;
+            shorter = s1;
+        }
+        const longerLength = longer.length;
+        if (longerLength === 0) return 1.0;
+        
+        return (longerLength - editDistance(longer, shorter)) / parseFloat(longerLength);
+    }
+
+    function editDistance(s1, s2) {
+        const costs = [];
+        for (let i = 0; i <= s1.length; i++) {
+            let lastValue = i;
+            for (let j = 0; j <= s2.length; j++) {
+                if (i === 0) costs[j] = j;
+                else {
+                    if (j > 0) {
+                        let newValue = costs[j - 1];
+                        if (s1.charAt(i - 1) !== s2.charAt(j - 1))
+                            newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                        costs[j - 1] = lastValue;
+                        lastValue = newValue;
+                    }
+                }
+            }
+            if (i > 0) costs[s2.length] = lastValue;
+        }
+        return costs[s2.length];
+    }
+</script>
+
+</body>
+</html>
