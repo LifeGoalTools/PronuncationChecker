@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Speech Coach - History Edition</title>
+    <title>AI Speech Coach - History Pro</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 40px; background-color: #f8f9fa; }
         .container { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 15px 35px rgba(0,0,0,0.05); width: 100%; max-width: 600px; text-align: center; position: relative; }
@@ -31,26 +31,36 @@
         /* HISTORY OVERLAY STYLES */
         #historyOverlay { 
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; 
+            background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; 
         }
         .history-content { 
-            background: white; width: 90%; max-width: 500px; max-height: 80vh; 
-            border-radius: 20px; padding: 30px; overflow-y: auto; text-align: left; 
+            background: white; width: 90%; max-width: 550px; max-height: 85vh; 
+            border-radius: 20px; padding: 30px; overflow-y: auto; text-align: left; position: relative;
         }
-        .history-item { border-bottom: 1px solid #eee; padding: 15px 0; }
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #f8f9fa; padding-bottom: 15px; }
+        .btn-clear-all { background: #fff5f5; color: #fa5252; padding: 6px 12px; font-size: 12px; border-radius: 6px; display: inline-block; cursor: pointer; border: 1px solid #ffc9c9; }
+        .btn-clear-all:hover { background: #fa5252; color: white; }
+        
+        .history-item { border-bottom: 1px solid #eee; padding: 15px 0; display: flex; justify-content: space-between; align-items: flex-start; }
         .history-item:last-child { border: none; }
-        .h-score { font-weight: 800; color: #228be6; float: right; }
-        .h-sentence { font-weight: 600; display: block; margin-bottom: 4px; }
+        .h-info { flex-grow: 1; padding-right: 15px; }
+        .h-score { font-weight: 800; color: #228be6; font-size: 18px; min-width: 50px; text-align: right; }
+        .h-sentence { font-weight: 600; display: block; margin-bottom: 4px; color: #333; }
         .h-transcript { color: #888; font-size: 13px; font-style: italic; }
+        .btn-delete { color: #adb5bd; cursor: pointer; font-size: 18px; padding: 5px; transition: 0.2s; }
+        .btn-delete:hover { color: #fa5252; }
     </style>
 </head>
 <body>
 
 <div id="historyOverlay" onclick="toggleHistory()">
     <div class="history-content" onclick="event.stopPropagation()">
-        <h2 style="margin-top:0">Session History</h2>
+        <div class="history-header">
+            <h2 style="margin:0">Session History</h2>
+            <div class="btn-clear-all" onclick="clearAllHistory()">🗑️ Clear All</div>
+        </div>
         <div id="historyList"></div>
-        <button onclick="toggleHistory()" style="display:block; margin-top:20px; width:100%">Close</button>
+        <button onclick="toggleHistory()" style="display:block; margin-top:20px; width:100%">Close (Esc)</button>
     </div>
 </div>
 
@@ -75,7 +85,7 @@
 
 <script>
     let sentences = [];
-    let historyData = [];
+    let historyData = JSON.parse(localStorage.getItem('speechHistory')) || [];
     let currentStep = 0;
     let isListening = false;
     let recognition;
@@ -117,20 +127,12 @@
     window.addEventListener('keydown', (e) => {
         if (e.code === "Space") {
             e.preventDefault();
-            if (!isListening) {
-                recognition.abort();
-                recognition.start();
-                isListening = true;
-                document.getElementById('status').innerText = "🔴 RECORDING...";
-                document.getElementById('status').className = "status-pill listening";
-                document.getElementById('score').style.display = "none";
-                document.getElementById('transcriptBox').style.display = "none";
-            } else {
-                stopAndAnalyze();
-            }
+            if (!isListening) startMic();
+            else stopAndAnalyze();
         }
         if (e.key.toLowerCase() === "l") playExample();
         if (e.key.toLowerCase() === "h") toggleHistory();
+        if (e.key === "Escape") document.getElementById('historyOverlay').style.display = "none";
     });
 
     function toggleHistory() {
@@ -146,16 +148,51 @@
     function renderHistory() {
         const list = document.getElementById('historyList');
         if (historyData.length === 0) {
-            list.innerHTML = "<p style='color:#bbb'>No scores yet. Complete an exercise first!</p>";
+            list.innerHTML = "<p style='color:#bbb; text-align:center; padding: 20px;'>No history found. Try a sentence!</p>";
             return;
         }
-        list.innerHTML = historyData.map(item => `
+        list.innerHTML = historyData.map((item, index) => `
             <div class="history-item">
-                <span class="h-score">${item.score}%</span>
-                <span class="h-sentence">${item.sentence}</span>
-                <span class="h-transcript">Heard: "${item.heard}"</span>
+                <div class="h-info">
+                    <span class="h-sentence">${item.sentence}</span>
+                    <span class="h-transcript">Heard: "${item.heard}"</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span class="h-score">${item.score}%</span>
+                    <span class="btn-delete" onclick="deleteHistoryItem(${index})">✕</span>
+                </div>
             </div>
         `).join("");
+    }
+
+    function deleteHistoryItem(index) {
+        historyData.splice(index, 1);
+        saveHistory();
+        renderHistory();
+    }
+
+    function clearAllHistory() {
+        if(confirm("Are you sure you want to delete all history?")) {
+            historyData = [];
+            saveHistory();
+            renderHistory();
+        }
+    }
+
+    function saveHistory() {
+        localStorage.setItem('speechHistory', JSON.stringify(historyData));
+    }
+
+    function startMic() {
+        try {
+            recognition.abort();
+            recognition.start();
+            isListening = true;
+            document.getElementById('status').innerText = "🔴 RECORDING...";
+            document.getElementById('status').className = "status-pill listening";
+            document.getElementById('score').style.display = "none";
+            document.getElementById('transcriptBox').style.display = "none";
+        } catch(e) { resetUI("Mic Error"); }
     }
 
     function stopAndAnalyze() {
@@ -190,12 +227,12 @@
         if (targetWords.length !== transcriptWords.length) score -= 30;
         score = Math.max(0, Math.round(score));
         
-        // Add to history
         historyData.unshift({
             sentence: sentences[currentStep],
             score: score,
             heard: rawTranscript
         });
+        saveHistory();
 
         document.getElementById('score').innerText = score + "%";
         document.getElementById('score').style.display = "block";
