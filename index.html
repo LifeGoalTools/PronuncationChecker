@@ -3,31 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Speech Coach - color Feedback</title>
+    <title>Speech Accuracy Coach</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 40px; background-color: #f8f9fa; }
-        .container { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.08); width: 100%; max-width: 650px; text-align: center; }
-        .step-label { color: #adb5bd; font-weight: 700; text-transform: uppercase; font-size: 12px; letter-spacing: 1.5px; margin-bottom: 10px; }
+        .container { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 15px 35px rgba(0,0,0,0.05); width: 100%; max-width: 600px; text-align: center; }
+        .step-label { color: #adb5bd; font-weight: 700; text-transform: uppercase; font-size: 12px; margin-bottom: 10px; }
         
-        /* Sentence Display */
-        .sentence-display { font-size: 34px; line-height: 1.4; margin: 20px 0 30px; font-weight: 700; color: #dee2e6; }
-        .word { transition: all 0.3s ease; display: inline-block; margin: 0 5px; border-bottom: 3px solid transparent; }
+        .sentence-display { font-size: 32px; line-height: 1.5; margin: 20px 0; font-weight: 600; color: #333; }
+        .word { display: inline-block; margin: 0 4px; padding: 0 2px; transition: all 0.2s; }
         
-        /* State Colors */
-        .highlight-correct { color: #2ecc71 !important; border-bottom-color: #2ecc71; }
-        .highlight-wrong { color: #e74c3c !important; border-bottom-color: #e74c3c; }
+        /* Clear Final States */
+        .correct { color: #2ecc71; border-bottom: 3px solid #2ecc71; }
+        .wrong { color: #e74c3c; border-bottom: 3px solid #e74c3c; }
+
+        .status-pill { display: inline-block; padding: 10px 25px; border-radius: 50px; font-size: 14px; background: #eee; margin: 20px 0; transition: 0.3s; }
+        .listening { background: #ff4757; color: white; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
+        .score-display { font-size: 48px; font-weight: 800; color: #228be6; margin: 10px 0; display: none; }
+        .controls { margin-top: 20px; }
+        button { background: #212529; color: white; border: none; padding: 12px 30px; border-radius: 10px; cursor: pointer; font-size: 16px; display: none; margin: 10px auto; }
         
-        .score-container { display: none; margin-top: 20px; padding: 20px; background: #f1f3f5; border-radius: 15px; }
-        .score-number { font-size: 48px; font-weight: 800; color: #228be6; }
-        
-        .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
-        button { border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-        .btn-listen { background: #e7f5ff; color: #228be6; }
-        .btn-next { background: #212529; color: white; display: none; margin: 20px auto 0; }
-        
-        .status-pill { display: inline-block; padding: 8px 20px; border-radius: 50px; font-size: 13px; background: #eee; }
-        .listening { background: #fff5f5; color: #fa5252; border: 1px solid #ffc9c9; font-weight: bold; }
-        kbd { background: #fff; border: 1px solid #ccc; padding: 2px 5px; border-radius: 4px; font-family: monospace; }
+        kbd { background: #eee; border: 1px solid #ccc; border-radius: 4px; padding: 2px 6px; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -36,20 +33,13 @@
     <div id="stepLabel" class="step-label">Loading...</div>
     <div id="textContainer" class="sentence-display"></div>
     
-    <div class="controls">
-        <button class="btn-listen" onclick="playExample()">🔊 Listen (L)</button>
-    </div>
+    <div id="status" class="status-pill">Press Space to Record</div>
+    <div id="score" class="score-display">0%</div>
 
-    <div id="status" class="status-pill">Press Space to Start</div>
+    <button id="nextBtn" onclick="nextSentence()">Next Sentence →</button>
 
-    <div id="scoreBox" class="score-container">
-        <div id="scoreNum" class="score-number">0%</div>
-        <p style="margin: 5px 0; color: #666;">Accuracy Score</p>
-        <button id="nextBtn" class="btn-next" onclick="nextSentence()">Next Sentence →</button>
-    </div>
-
-    <div style="margin-top: 30px; color: #adb5bd; font-size: 12px;">
-        <kbd>Space</kbd> to Record &nbsp; | &nbsp; <kbd>L</kbd> for Example
+    <div style="margin-top: 30px; color: #adb5bd; font-size: 13px;">
+        <kbd>Space</kbd> Start/Stop &nbsp; | &nbsp; <kbd>L</kbd> Hear Example
     </div>
 </div>
 
@@ -57,89 +47,85 @@
     let sentences = [];
     let currentStep = 0;
     let isListening = false;
-    let fullTranscript = "";
-    let correctWordIndices = new Set();
+    let recognition;
 
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'en-US';
-    recognition.interimResults = true;
-    recognition.continuous = true;
+    // Load Speech Engine
+    if ('webkitSpeechRecognition' in window) {
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = false; // Stop when the user stops talking or hits space
+        recognition.interimResults = false; // Only care about the final polished result
+        recognition.lang = 'en-US';
+    }
 
     async function loadData() {
         try {
-            const response = await fetch('sentences.json');
-            sentences = await response.json();
-            initSentence();
-        } catch (err) { console.error("Could not load data."); }
+            const resp = await fetch('sentences.json');
+            sentences = await resp.json();
+            renderSentence();
+        } catch (e) { document.getElementById('stepLabel').innerText = "JSON Error"; }
     }
 
-    function initSentence() {
+    function renderSentence() {
         const words = sentences[currentStep].split(" ");
-        document.getElementById('textContainer').innerHTML = words.map((word, i) => `<span class="word" id="word-${i}">${word}</span>`).join("");
+        document.getElementById('textContainer').innerHTML = words.map((w, i) => `<span class="word" id="word-${i}">${w}</span>`).join("");
         document.getElementById('stepLabel').innerText = `Sentence ${currentStep + 1} of ${sentences.length}`;
-        document.getElementById('scoreBox').style.display = "none";
+        document.getElementById('score').style.display = "none";
         document.getElementById('nextBtn').style.display = "none";
-        fullTranscript = "";
-        correctWordIndices.clear();
+        document.getElementById('status').innerText = "Press Space to Record";
+        document.getElementById('status').className = "status-pill";
     }
 
     window.addEventListener('keydown', (e) => {
-        if (e.code === "Space") { e.preventDefault(); toggleListening(); }
+        if (e.code === "Space") {
+            e.preventDefault();
+            if (!isListening) startRecording();
+            else stopRecording();
+        }
         if (e.key.toLowerCase() === "l") playExample();
     });
 
-    function toggleListening() {
-        if (!isListening) {
-            recognition.start();
-            isListening = true;
-            document.getElementById('status').innerText = "🔴 Listening...";
-            document.getElementById('status').className = "status-pill listening";
-        } else {
-            recognition.stop();
-            isListening = false;
-            document.getElementById('status').innerText = "Analyzing...";
-            document.getElementById('status').className = "status-pill";
-            setTimeout(processFinalResults, 600);
-        }
+    function startRecording() {
+        isListening = true;
+        recognition.start();
+        document.getElementById('status').innerText = "🔴 RECORDING... (Press Space to Stop)";
+        document.getElementById('status').className = "status-pill listening";
+    }
+
+    function stopRecording() {
+        isListening = false;
+        recognition.stop();
+        document.getElementById('status').innerText = "Analyzing Pronunciation...";
+        document.getElementById('status').className = "status-pill";
     }
 
     recognition.onresult = (event) => {
-        let interimTranscript = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) fullTranscript += event.results[i][0].transcript;
-            else interimTranscript += event.results[i][0].transcript;
-        }
-        
-        const combinedText = (fullTranscript + interimTranscript).toLowerCase();
+        const result = event.results[0][0].transcript.toLowerCase().replace(/[?.!,]/g,"");
+        const target = sentences[currentStep].toLowerCase().replace(/[?.!,]/g,"");
         const targetWords = sentences[currentStep].split(" ");
+        
+        let correctCount = 0;
 
-        targetWords.forEach((word, index) => {
-            const cleanTarget = word.replace(/[?.!,]/g,"").toLowerCase();
-            if (combinedText.includes(cleanTarget)) {
-                document.getElementById(`word-${index}`).classList.add('highlight-correct');
-                correctWordIndices.add(index);
+        targetWords.forEach((word, i) => {
+            const cleanWord = word.toLowerCase().replace(/[?.!,]/g,"");
+            const element = document.getElementById(`word-${i}`);
+            
+            // If the transcript contains this specific word
+            if (result.includes(cleanWord)) {
+                element.className = "word correct";
+                correctCount++;
+            } else {
+                element.className = "word wrong";
             }
         });
+
+        // Show Score
+        const finalScore = Math.round((correctCount / targetWords.length) * 100);
+        const scoreEl = document.getElementById('score');
+        scoreEl.innerText = finalScore + "%";
+        scoreEl.style.display = "block";
+        document.getElementById('nextBtn').style.display = "block";
+        document.getElementById('status').innerText = "Done!";
     };
-
-    function processFinalResults() {
-        const targetWords = sentences[currentStep].split(" ");
-        
-        // Mark any word that wasn't colored green as red
-        targetWords.forEach((word, index) => {
-            if (!correctWordIndices.has(index)) {
-                document.getElementById(`word-${index}`).classList.add('highlight-wrong');
-            }
-        });
-
-        // Calculate score
-        const score = Math.round((correctWordIndices.size / targetWords.length) * 100);
-        
-        document.getElementById('scoreBox').style.display = "block";
-        document.getElementById('nextBtn').style.display = "inline-block";
-        document.getElementById('scoreNum').innerText = score + "%";
-        document.getElementById('status').innerText = "Review your results!";
-    }
 
     function playExample() {
         window.speechSynthesis.cancel();
@@ -150,8 +136,7 @@
 
     function nextSentence() {
         currentStep = (currentStep + 1) % sentences.length;
-        initSentence();
-        document.getElementById('status').innerText = "Press Space to Start";
+        renderSentence();
     }
 
     loadData();
