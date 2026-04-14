@@ -3,35 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Speech Coach</title>
+    <title>AI Speech Coach - color Feedback</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 40px; background-color: #f8f9fa; }
         .container { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.08); width: 100%; max-width: 650px; text-align: center; }
         .step-label { color: #adb5bd; font-weight: 700; text-transform: uppercase; font-size: 12px; letter-spacing: 1.5px; margin-bottom: 10px; }
-        .sentence-display { font-size: 36px; line-height: 1.4; margin: 20px 0 40px; font-weight: 700; color: #dee2e6; }
-        .word { transition: all 0.3s ease; display: inline-block; margin: 0 6px; }
-        .highlight { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.2); transform: scale(1.1); }
-        .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 30px; }
-        button { border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+        
+        /* Sentence Display */
+        .sentence-display { font-size: 34px; line-height: 1.4; margin: 20px 0 30px; font-weight: 700; color: #dee2e6; }
+        .word { transition: all 0.3s ease; display: inline-block; margin: 0 5px; border-bottom: 3px solid transparent; }
+        
+        /* State Colors */
+        .highlight-correct { color: #2ecc71 !important; border-bottom-color: #2ecc71; }
+        .highlight-wrong { color: #e74c3c !important; border-bottom-color: #e74c3c; }
+        
+        .score-container { display: none; margin-top: 20px; padding: 20px; background: #f1f3f5; border-radius: 15px; }
+        .score-number { font-size: 48px; font-weight: 800; color: #228be6; }
+        
+        .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
+        button { border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; }
         .btn-listen { background: #e7f5ff; color: #228be6; }
-        .btn-next { background: #212529; color: white; display: none; }
-        .status-pill { display: inline-block; padding: 8px 20px; border-radius: 50px; font-size: 13px; background: #f1f3f5; color: #495057; border: 2px solid transparent; }
-        .listening { background: #fff5f5; color: #fa5252; border-color: #ffc9c9; font-weight: bold; }
-        kbd { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 2px 6px; font-family: monospace; font-size: 12px; }
+        .btn-next { background: #212529; color: white; display: none; margin: 20px auto 0; }
+        
+        .status-pill { display: inline-block; padding: 8px 20px; border-radius: 50px; font-size: 13px; background: #eee; }
+        .listening { background: #fff5f5; color: #fa5252; border: 1px solid #ffc9c9; font-weight: bold; }
+        kbd { background: #fff; border: 1px solid #ccc; padding: 2px 5px; border-radius: 4px; font-family: monospace; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div id="stepLabel" class="step-label">Loading Sentences...</div>
+    <div id="stepLabel" class="step-label">Loading...</div>
     <div id="textContainer" class="sentence-display"></div>
+    
     <div class="controls">
-        <button class="btn-listen" onclick="playExample()"><span>🔊</span> Listen (L)</button>
+        <button class="btn-listen" onclick="playExample()">🔊 Listen (L)</button>
+    </div>
+
+    <div id="status" class="status-pill">Press Space to Start</div>
+
+    <div id="scoreBox" class="score-container">
+        <div id="scoreNum" class="score-number">0%</div>
+        <p style="margin: 5px 0; color: #666;">Accuracy Score</p>
         <button id="nextBtn" class="btn-next" onclick="nextSentence()">Next Sentence →</button>
     </div>
-    <div id="status" class="status-pill">Press Space to Start</div>
-    <div style="margin-top: 30px; color: #868e96; font-size: 13px; border-top: 1px solid #f1f3f5; padding-top: 20px;">
-        <kbd>Space</kbd> Start/Stop &nbsp; | &nbsp; <kbd>L</kbd> Example
+
+    <div style="margin-top: 30px; color: #adb5bd; font-size: 12px;">
+        <kbd>Space</kbd> to Record &nbsp; | &nbsp; <kbd>L</kbd> for Example
     </div>
 </div>
 
@@ -39,10 +57,10 @@
     let sentences = [];
     let currentStep = 0;
     let isListening = false;
-    let spokenWordsCache = new Set();
+    let fullTranscript = "";
+    let correctWordIndices = new Set();
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
     recognition.interimResults = true;
     recognition.continuous = true;
@@ -50,27 +68,19 @@
     async function loadData() {
         try {
             const response = await fetch('sentences.json');
-            if (!response.ok) throw new Error("File not found");
             sentences = await response.json();
             initSentence();
-        } catch (err) {
-            document.getElementById('stepLabel').innerText = "Error: Check sentences.json exists";
-        }
+        } catch (err) { console.error("Could not load data."); }
     }
 
     function initSentence() {
         const words = sentences[currentStep].split(" ");
         document.getElementById('textContainer').innerHTML = words.map((word, i) => `<span class="word" id="word-${i}">${word}</span>`).join("");
         document.getElementById('stepLabel').innerText = `Sentence ${currentStep + 1} of ${sentences.length}`;
+        document.getElementById('scoreBox').style.display = "none";
         document.getElementById('nextBtn').style.display = "none";
-        spokenWordsCache.clear();
-    }
-
-    function playExample() {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(sentences[currentStep]);
-        utterance.rate = 0.9;
-        window.speechSynthesis.speak(utterance);
+        fullTranscript = "";
+        correctWordIndices.clear();
     }
 
     window.addEventListener('keydown', (e) => {
@@ -83,35 +93,60 @@
             recognition.start();
             isListening = true;
             document.getElementById('status').innerText = "🔴 Listening...";
-            document.getElementById('status').classList.add('listening');
+            document.getElementById('status').className = "status-pill listening";
         } else {
             recognition.stop();
             isListening = false;
-            document.getElementById('status').innerText = "Press Space to Start";
-            document.getElementById('status').classList.remove('listening');
+            document.getElementById('status').innerText = "Analyzing...";
+            document.getElementById('status').className = "status-pill";
+            setTimeout(processFinalResults, 600);
         }
     }
 
     recognition.onresult = (event) => {
-        let liveTranscript = "";
+        let interimTranscript = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-            liveTranscript += event.results[i][0].transcript;
+            if (event.results[i].isFinal) fullTranscript += event.results[i][0].transcript;
+            else interimTranscript += event.results[i][0].transcript;
         }
-        const spokenInput = liveTranscript.toLowerCase();
+        
+        const combinedText = (fullTranscript + interimTranscript).toLowerCase();
         const targetWords = sentences[currentStep].split(" ");
 
         targetWords.forEach((word, index) => {
-            if (spokenInput.includes(word.replace(/[?.!,]/g,"").toLowerCase())) {
-                document.getElementById(`word-${index}`).classList.add('highlight');
-                spokenWordsCache.add(index);
+            const cleanTarget = word.replace(/[?.!,]/g,"").toLowerCase();
+            if (combinedText.includes(cleanTarget)) {
+                document.getElementById(`word-${index}`).classList.add('highlight-correct');
+                correctWordIndices.add(index);
+            }
+        });
+    };
+
+    function processFinalResults() {
+        const targetWords = sentences[currentStep].split(" ");
+        
+        // Mark any word that wasn't colored green as red
+        targetWords.forEach((word, index) => {
+            if (!correctWordIndices.has(index)) {
+                document.getElementById(`word-${index}`).classList.add('highlight-wrong');
             }
         });
 
-        if (spokenWordsCache.size === targetWords.length) {
-            document.getElementById('nextBtn').style.display = "flex";
-            document.getElementById('status').innerText = "✨ Perfect!";
-        }
-    };
+        // Calculate score
+        const score = Math.round((correctWordIndices.size / targetWords.length) * 100);
+        
+        document.getElementById('scoreBox').style.display = "block";
+        document.getElementById('nextBtn').style.display = "inline-block";
+        document.getElementById('scoreNum').innerText = score + "%";
+        document.getElementById('status').innerText = "Review your results!";
+    }
+
+    function playExample() {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(sentences[currentStep]);
+        utterance.rate = 0.9;
+        window.speechSynthesis.speak(utterance);
+    }
 
     function nextSentence() {
         currentStep = (currentStep + 1) % sentences.length;
