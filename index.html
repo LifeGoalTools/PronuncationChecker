@@ -3,56 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Speech Coach</title>
+    <title>AI Speech Coach - External Data</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; justify-content: center; padding: 40px; background-color: #f8f9fa; }
         .container { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.08); width: 100%; max-width: 650px; text-align: center; }
         .step-label { color: #adb5bd; font-weight: 700; text-transform: uppercase; font-size: 12px; letter-spacing: 1.5px; margin-bottom: 10px; }
-        
-        /* Sentence Display & Real-time Highlight */
         .sentence-display { font-size: 36px; line-height: 1.4; margin: 20px 0 40px; font-weight: 700; color: #dee2e6; }
-        .word { transition: all 0.3s ease; display: inline-block; margin: 0 6px; position: relative; }
+        .word { transition: all 0.3s ease; display: inline-block; margin: 0 6px; }
         .highlight { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.2); transform: scale(1.1); }
-        
-        /* Buttons & Status */
         .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 30px; }
         button { border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-        
         .btn-listen { background: #e7f5ff; color: #228be6; }
-        .btn-listen:hover { background: #d0ebff; }
         .btn-next { background: #212529; color: white; display: none; }
-        
-        .status-pill { display: inline-block; padding: 8px 20px; border-radius: 50px; font-size: 13px; background: #f1f3f5; color: #495057; border: 2px solid transparent; }
-        .listening { background: #fff5f5; color: #fa5252; border-color: #ffc9c9; font-weight: bold; }
-        
+        .status-pill { display: inline-block; padding: 8px 20px; border-radius: 50px; font-size: 13px; background: #f1f3f5; color: #495057; }
+        .listening { background: #fff5f5; color: #fa5252; border: 2px solid #ffc9c9; font-weight: bold; }
         kbd { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 2px 6px; font-family: monospace; font-size: 12px; }
-        .hint { margin-top: 30px; color: #868e96; font-size: 13px; border-top: 1px solid #f1f3f5; padding-top: 20px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div id="stepLabel" class="step-label">Sentence 1 of 3</div>
+    <div id="stepLabel" class="step-label">Loading Sentences...</div>
     <div id="textContainer" class="sentence-display"></div>
     
     <div class="controls">
         <button class="btn-listen" onclick="playExample()">
-            <span>🔊</span> Listen to Example (L)
+            <span>🔊</span> Listen (L)
         </button>
         <button id="nextBtn" class="btn-next" onclick="nextSentence()">
             Next Sentence →
         </button>
     </div>
 
-    <div id="status" class="status-pill">Press Space to Start Speaking</div>
+    <div id="status" class="status-pill">Press Space to Start</div>
 
-    <div class="hint">
+    <div style="margin-top: 30px; color: #868e96; font-size: 13px; border-top: 1px solid #f1f3f5; padding-top: 20px;">
         <kbd>Space</kbd> Start/Stop Recording &nbsp; | &nbsp; <kbd>L</kbd> Hear Example
     </div>
 </div>
 
 <script>
-    const sentences = ["What day is it?", "What is the date today?", "How's the weather?"];
+    let sentences = []; // Will be populated from JSON
     let currentStep = 0;
     let isListening = false;
     let spokenWordsCache = new Set();
@@ -71,8 +62,19 @@
 
     const synth = window.speechSynthesis;
 
-    // --- Initialization ---
-    function loadSentence() {
+    // --- NEW: FETCH DATA FROM JSON FILE ---
+    async function loadData() {
+        try {
+            const response = await fetch('sentences.json');
+            sentences = await response.json();
+            initSentence();
+        } catch (err) {
+            console.error("Failed to load sentences.json:", err);
+            stepLabel.textContent = "Error loading sentences.json";
+        }
+    }
+
+    function initSentence() {
         const text = sentences[currentStep];
         const words = text.split(" ");
         textContainer.innerHTML = words.map((word, i) => `<span class="word" id="word-${i}">${word}</span>`).join("");
@@ -80,43 +82,38 @@
         nextBtn.style.display = "none";
         spokenWordsCache.clear();
     }
-    loadSentence();
 
-    // --- Audio Example (Text-to-Speech) ---
     function playExample() {
         if (synth.speaking) synth.cancel();
         const utterance = new SpeechSynthesisUtterance(sentences[currentStep]);
-        utterance.rate = 0.9; // Slightly slower for clarity
-        utterance.pitch = 1;
+        utterance.rate = 0.9;
         synth.speak(utterance);
     }
 
-    // --- Keyboard Shortcuts ---
     window.addEventListener('keydown', (e) => {
         if (e.code === "Space") {
             e.preventDefault();
             toggleListening();
         }
-        if (e.key.toLowerCase() === "l") {
-            playExample();
-        }
+        if (e.key.toLowerCase() === "l") playExample();
     });
 
     function toggleListening() {
         if (!isListening) {
-            recognition.start();
-            isListening = true;
-            statusPill.textContent = "🔴 Listening... Speak now";
-            statusPill.classList.add('listening');
+            try {
+                recognition.start();
+                isListening = true;
+                statusPill.textContent = "🔴 Listening...";
+                statusPill.classList.add('listening');
+            } catch(e) {}
         } else {
             recognition.stop();
             isListening = false;
-            statusPill.textContent = "Press Space to Start Speaking";
+            statusPill.textContent = "Press Space to Start";
             statusPill.classList.remove('listening');
         }
     }
 
-    // --- Real-Time Recognition Logic ---
     recognition.onresult = (event) => {
         let liveTranscript = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -129,30 +126,28 @@
         targetWords.forEach((word, index) => {
             const cleanTarget = word.replace(/[?.!,]/g,"").toLowerCase();
             if (spokenInput.includes(cleanTarget)) {
-                document.getElementById(`word-${index}`).classList.add('highlight');
-                spokenWordsCache.add(index);
+                const el = document.getElementById(`word-${index}`);
+                if(el) {
+                    el.classList.add('highlight');
+                    spokenWordsCache.add(index);
+                }
             }
         });
 
-        // If all words are highlighted, show the next button
         if (spokenWordsCache.size === targetWords.length) {
             nextBtn.style.display = "flex";
-            statusPill.textContent = "✨ Perfect! Move to next.";
-            statusPill.classList.remove('listening');
+            statusPill.textContent = "✨ Well done!";
         }
     };
 
     function nextSentence() {
         currentStep = (currentStep + 1) % sentences.length;
-        loadSentence();
-        statusPill.textContent = "Press Space to Start Speaking";
+        initSentence();
+        statusPill.textContent = "Press Space to Start";
     }
 
-    recognition.onerror = (err) => {
-        console.error(err);
-        isListening = false;
-        statusPill.classList.remove('listening');
-    };
+    // Load data on page start
+    loadData();
 </script>
 
 </body>
